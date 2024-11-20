@@ -34,12 +34,13 @@ static void twai_receive_task(void *arg) {
         int16_t current_raw = (rx_msg.data[3] << 8) | rx_msg.data[2];
         float current = current_raw / 10.0;
         ESP_LOGW(TAG, "Current: %.1f A", current);
-      } else {
-        // Log other messages
-        ESP_LOGW(TAG, "Received message ID: 0x%03X",
-                 (unsigned int)rx_msg.identifier);
-        ESP_LOG_BUFFER_HEX(TAG, rx_msg.data, rx_msg.data_length_code);
       }
+
+      // Log other messages
+      ESP_LOGW(TAG, "Received message ID: 0x%03X",
+               (unsigned int)rx_msg.identifier);
+      ESP_LOG_BUFFER_HEX(TAG, rx_msg.data, rx_msg.data_length_code);
+
     } else {
       ESP_LOGE(TAG, "Failed to receive message");
     }
