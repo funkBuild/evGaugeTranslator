@@ -1,11 +1,14 @@
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/projdefs.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #include "driver/twai.h"
+#include <stdint.h>
 
 static const char *TAG = "example";
 
@@ -18,33 +21,109 @@ static const twai_general_config_t g_config =
 static const twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
 static const twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
+void send_amps_and_temp(float volts, float amps, float temp) {
+  twai_message_t msg = {
+      .extd = 0,
+      .rtr = 0,
+      .ss = 0,
+      .self = 0,
+      .dlc_non_comp = 0,
+      .identifier = 0x356,
+      .data_length_code = 8,
+      .data = {0},
+  };
+
+  // Pack voltage (unsigned, little endian), scale 0.1
+  uint16_t volts_scaled = (uint16_t)(volts * 10);
+  msg.data[0] = (volts_scaled & 0xFF);
+  msg.data[1] = (volts_scaled >> 8) & 0xFF;
+
+  // Pack current (signed, little endian), scale 0.1
+  int16_t amps_scaled = (int16_t)(amps * 10);
+  msg.data[2] = (amps_scaled & 0xFF);
+  msg.data[3] = (amps_scaled >> 8) & 0xFF;
+
+  // Pack temperature (signed, little endian), scale 0.1
+  int16_t temp_scaled = (int16_t)(temp * 10);
+  msg.data[4] = (temp_scaled & 0xFF);
+  msg.data[5] = (temp_scaled >> 8) & 0xFF;
+
+  twai_transmit(&msg, pdMS_TO_TICKS(50));
+}
+
+void send_battery_level(float soc) {
+  twai_message_t msg = {
+      .extd = 0,
+      .rtr = 0,
+      .ss = 0,
+      .self = 0,
+      .dlc_non_comp = 0,
+      .identifier = 0x355,
+      .data_length_code = 8,
+      .data = {0},
+  };
+
+  // Pack battery level (unsigned, little endian)
+  uint16_t level = (uint16_t)(soc);
+  msg.data[0] = (level & 0xFF);
+  msg.data[1] = (level >> 8) & 0xFF;
+
+  twai_transmit(&msg, pdMS_TO_TICKS(50));
+}
+
 static void twai_receive_task(void *arg) {
+  float soc = 50.0;     // TODO: Change back to 0.0 after testing
+  float current = 50.0; // TODO: Change back to 0.0 after testing
+  float voltage = 0;
+  float temp = 0;
+
+  int64_t last_tx_time = esp_timer_get_time();
+
   while (1) {
     twai_message_t rx_msg;
 
     // Receive messages
-    if (twai_receive(&rx_msg, portMAX_DELAY) == ESP_OK) {
-      // Decode and process SOC and Current messages
-      if (rx_msg.identifier == 0x292) {
+    if (twai_receive(&rx_msg, pdMS_TO_TICKS(100)) == ESP_OK) {
+      switch (rx_msg.identifier) {
+      case 0x292: {
         uint16_t soc_raw =
             ((rx_msg.data[2] & 0x0F) << 6) | ((rx_msg.data[1] & 0xFC) >> 2);
-        float soc = soc_raw / 10.0;
+        soc = soc_raw / 10.0;
+
         ESP_LOGW(TAG, "SOC: %.1f%%", soc);
-      } else if (rx_msg.identifier == 0x132) {
-        int16_t current_raw = (rx_msg.data[3] << 8) | rx_msg.data[2];
-        float current = current_raw / 10.0;
-        ESP_LOGW(TAG, "Current: %.1f A", current);
+        break;
       }
+      case 0x132: {
+        int16_t current_raw = (rx_msg.data[3] << 8) | rx_msg.data[2];
+        current = current_raw / 10.0;
 
-      // Log other messages
-      ESP_LOGW(TAG, "Received message ID: 0x%03X",
-               (unsigned int)rx_msg.identifier);
-      ESP_LOG_BUFFER_HEX(TAG, rx_msg.data, rx_msg.data_length_code);
+        uint16_t voltage_raw = (rx_msg.data[1] << 8) | rx_msg.data[0];
+        voltage = voltage_raw * 0.01;
 
-    } else {
-      ESP_LOGE(TAG, "Failed to receive message");
+        ESP_LOGW(TAG, "Current: %.1f A", current);
+        ESP_LOGW(TAG, "Voltage: %.2f V", voltage);
+        break;
+      }
+      case 0x332: {
+        uint8_t mux = (rx_msg.data[0] & 0x03);
+
+        if (mux == 0) {
+          unsigned int battery_max_temp = (rx_msg.data[2] * 5) - 400;
+          temp = battery_max_temp / 10.0;
+        }
+      }
+      }
+    }
+
+    // Send data every 100ms
+    int64_t now = esp_timer_get_time();
+    if (now - last_tx_time > 100000) {
+      send_amps_and_temp(voltage, current, temp);
+      send_battery_level(soc);
+      last_tx_time = now;
     }
   }
+
   vTaskDelete(NULL);
 }
 
