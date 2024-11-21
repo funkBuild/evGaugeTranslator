@@ -14,7 +14,7 @@ static const char *TAG = "example";
 
 #define CAN_TX_PIN GPIO_NUM_27
 #define CAN_RX_PIN GPIO_NUM_26
-#define CAN_SE_PIN 23
+#define CAN_SE_PIN GPIO_NUM_23
 
 static const twai_general_config_t g_config =
     TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_PIN, CAN_RX_PIN, TWAI_MODE_NORMAL);
