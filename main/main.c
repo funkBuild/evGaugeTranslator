@@ -78,6 +78,7 @@ static void twai_receive_task(void *arg) {
   float temp = 0;
 
   int64_t last_tx_time = esp_timer_get_time();
+  int64_t last_log_time = esp_timer_get_time();
 
   while (1) {
     twai_message_t rx_msg;
@@ -89,8 +90,6 @@ static void twai_receive_task(void *arg) {
         uint16_t soc_raw =
             ((rx_msg.data[2] & 0x0F) << 6) | ((rx_msg.data[1] & 0xFC) >> 2);
         soc = soc_raw / 10.0;
-
-        ESP_LOGW(TAG, "SOC: %.1f%%", soc);
         break;
       }
       case 0x132: {
@@ -99,9 +98,6 @@ static void twai_receive_task(void *arg) {
 
         uint16_t voltage_raw = (rx_msg.data[1] << 8) | rx_msg.data[0];
         voltage = voltage_raw * 0.01;
-
-        ESP_LOGW(TAG, "Current: %.1f A", current);
-        ESP_LOGW(TAG, "Voltage: %.2f V", voltage);
         break;
       }
       case 0x332: {
@@ -121,6 +117,15 @@ static void twai_receive_task(void *arg) {
       send_amps_and_temp(voltage, current, temp);
       send_battery_level(soc);
       last_tx_time = now;
+    }
+
+    // Log values every 1s
+    if (now - last_log_time > 1000000) {
+      ESP_LOGI(TAG, "SOC: %.1f%%", soc);
+      ESP_LOGI(TAG, "Current: %.1f A", current);
+      ESP_LOGI(TAG, "Voltage: %.2f V", voltage);
+      ESP_LOGI(TAG, "Temperature: %.1f C", temp);
+      last_log_time = now;
     }
   }
 
