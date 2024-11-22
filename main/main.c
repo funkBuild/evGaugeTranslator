@@ -94,7 +94,7 @@ static void twai_receive_task(void *arg) {
       }
       case 0x132: {
         int16_t current_raw = (rx_msg.data[3] << 8) | rx_msg.data[2];
-        current = current_raw / 10.0;
+        current = current_raw / -10.0;
 
         uint16_t voltage_raw = (rx_msg.data[1] << 8) | rx_msg.data[0];
         voltage = voltage_raw * 0.01;
